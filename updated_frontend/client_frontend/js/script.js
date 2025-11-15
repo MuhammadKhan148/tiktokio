@@ -1,5 +1,161 @@
+
 // API Configuration
-const API_BASE_URL = 'http://localhost:8000'; // Change this to your backend URL in production
+function resolveApiBaseUrl() {
+    const candidates = [];
+    if (typeof window !== 'undefined') {
+        if (window.TIKTOKIO_FASTAPI_BASE) {
+            candidates.push(window.TIKTOKIO_FASTAPI_BASE);
+        }
+        if (window.__FASTAPI_BASE_URL__) {
+            candidates.push(window.__FASTAPI_BASE_URL__);
+        }
+    }
+    if (typeof document !== 'undefined') {
+        const meta = document.querySelector('meta[name="fastapi-base-url"]');
+        if (meta && meta.getAttribute('content')) {
+            candidates.push(meta.getAttribute('content'));
+        }
+    }
+    for (const value of candidates) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim().replace(/\/+$/, '');
+        }
+    }
+    return 'http://127.0.0.1:8000';
+}
+
+let API_BASE_URL = resolveApiBaseUrl();
+let apiConnectionVerified = false;
+
+function normalizeBaseUrl(value) {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+        return '';
+    }
+    return value.trim().replace(/\/+$/, '');
+}
+
+function safeLocalStorageGet(key) {
+    try {
+        return window.localStorage ? window.localStorage.getItem(key) : null;
+    } catch {
+        return null;
+    }
+}
+
+function safeLocalStorageSet(key, value) {
+    try {
+        if (window.localStorage) {
+            window.localStorage.setItem(key, value);
+        }
+    } catch {
+        // Ignore storage errors (private browsing, etc.)
+    }
+}
+
+function buildApiBaseCandidates(initialBase) {
+    const seen = new Set();
+    const pushCandidate = (rawValue) => {
+        const normalized = normalizeBaseUrl(rawValue);
+        if (normalized) {
+            seen.add(normalized);
+        }
+    };
+
+    pushCandidate(safeLocalStorageGet('tiktokio:lastApiBase'));
+    pushCandidate(initialBase);
+
+    if (typeof window !== 'undefined') {
+        pushCandidate(window.TIKTOKIO_FASTAPI_BASE);
+        pushCandidate(window.__FASTAPI_BASE_URL__);
+        if (window.location?.origin) {
+            pushCandidate(window.location.origin);
+        }
+    }
+
+    if (typeof document !== 'undefined') {
+        const meta = document.querySelector('meta[name="fastapi-base-url"]');
+        pushCandidate(meta?.getAttribute('content'));
+    }
+
+    ['http://127.0.0.1:8000', 'http://127.0.0.1:8001', 'http://localhost:8000', 'http://localhost:8001']
+        .forEach(pushCandidate);
+
+    Array.from(seen).forEach((candidate) => {
+        try {
+            const parsed = new URL(candidate);
+            if (!parsed.port || parsed.port === '8000') {
+                parsed.port = '8001';
+                pushCandidate(parsed.toString());
+            } else if (parsed.port === '8001') {
+                parsed.port = '8000';
+                pushCandidate(parsed.toString());
+            }
+        } catch {
+            // Ignore invalid URLs
+        }
+    });
+
+    return Array.from(seen);
+}
+
+async function probeApiHealth(baseUrl) {
+    if (!baseUrl) {
+        return false;
+    }
+    const healthEndpoint = `${baseUrl}/health`;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    try {
+        const response = await fetch(healthEndpoint, {
+            headers: { 'Accept': 'application/json' },
+            signal: controller.signal,
+        });
+        if (!response.ok) {
+            console.warn('API probe failed:', healthEndpoint, response.status, response.statusText);
+            return false;
+        }
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const preview = (await response.text()).slice(0, 120);
+            console.warn('API probe returned unexpected payload:', contentType || 'unknown', preview);
+            return false;
+        }
+        await response.json();
+        return true;
+    } catch (error) {
+        console.warn('API probe error for', healthEndpoint, error);
+        return false;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+async function ensureApiBaseUrlConnection(force = false) {
+    if (apiConnectionVerified && !force) {
+        return true;
+    }
+    const candidates = buildApiBaseCandidates(API_BASE_URL);
+    for (const candidate of candidates) {
+        if (!candidate) {
+            continue;
+        }
+        const reachable = await probeApiHealth(candidate);
+        if (reachable) {
+            if (candidate !== API_BASE_URL) {
+                console.info('Switching API base URL to', candidate);
+            }
+            API_BASE_URL = candidate;
+            apiConnectionVerified = true;
+            safeLocalStorageSet('tiktokio:lastApiBase', candidate);
+            return true;
+        }
+    }
+    return false;
+}
+
+if (typeof window !== 'undefined') {
+    window.ensureApiBaseUrlConnection = ensureApiBaseUrlConnection;
+}
 
 // Cache for translations to avoid repeated API calls
 const translationCache = new Map();
@@ -382,21 +538,15 @@ const originalTexts = new Map();
 
 // Test API connection
 async function testAPIConnection() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/`);
-        if (response.ok) {
-            const data = await response.json();
-            console.log('API connected:', data);
-            return true;
-        } else {
-            console.error('API connection failed:', response.status);
-            return false;
-        }
-    } catch (error) {
-        console.error('API connection error:', error);
-        console.error('Make sure the backend server is running on', API_BASE_URL);
-        return false;
+    const connected = await ensureApiBaseUrlConnection();
+    if (connected) {
+        console.log('API connected using', API_BASE_URL);
+        return true;
     }
+    const candidates = buildApiBaseCandidates(API_BASE_URL);
+    console.error('API connection error: none of the candidate base URLs responded.', candidates);
+    console.error('Make sure the backend server is running (e.g., python -m uvicorn api.main:app --host 127.0.0.1 --port 8001)');
+    return false;
 }
 
 // Initialize: Store original English texts on page load
@@ -953,3 +1103,4 @@ function initFAQAccordion() {
 }
 
 // Format labels are loaded via loadContentFromAPI which applies to data-i18n attributes
+
