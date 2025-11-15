@@ -1,5 +1,28 @@
 // API Configuration
-const API_BASE_URL = 'http://localhost:8000'; // Change this to your backend URL in production
+function resolveApiBaseUrl() {
+    const candidates = [];
+    if (typeof window !== 'undefined') {
+        if (window.TIKTOKIO_FASTAPI_BASE) {
+            candidates.push(window.TIKTOKIO_FASTAPI_BASE);
+        }
+        if (window.__FASTAPI_BASE_URL__) {
+            candidates.push(window.__FASTAPI_BASE_URL__);
+        }
+    }
+    if (typeof document !== 'undefined') {
+        const meta = document.querySelector('meta[name="fastapi-base-url"]');
+        if (meta && meta.getAttribute('content')) {
+            candidates.push(meta.getAttribute('content'));
+        }
+    }
+    for (const value of candidates) {
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim().replace(/\/+$/, '');
+        }
+    }
+    return 'http://127.0.0.1:8000';
+}
+const API_BASE_URL = resolveApiBaseUrl();
 
 // Cache for translations to avoid repeated API calls
 const translationCache = new Map();
@@ -382,19 +405,27 @@ const originalTexts = new Map();
 
 // Test API connection
 async function testAPIConnection() {
+    const healthEndpoint = `${API_BASE_URL}/health`;
     try {
-        const response = await fetch(`${API_BASE_URL}/`);
-        if (response.ok) {
-            const data = await response.json();
-            console.log('API connected:', data);
-            return true;
-        } else {
-            console.error('API connection failed:', response.status);
+        const response = await fetch(healthEndpoint, {
+            headers: { 'Accept': 'application/json' }
+        });
+        if (!response.ok) {
+            console.error('API connection failed:', response.status, response.statusText);
             return false;
         }
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const preview = (await response.text()).slice(0, 120);
+            console.error('API connection error: Unexpected response type:', contentType || 'unknown', preview);
+            return false;
+        }
+        const data = await response.json();
+        console.log('API connected:', data);
+        return true;
     } catch (error) {
         console.error('API connection error:', error);
-        console.error('Make sure the backend server is running on', API_BASE_URL);
+        console.error('Make sure the backend server is running on', healthEndpoint);
         return false;
     }
 }
