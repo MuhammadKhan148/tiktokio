@@ -29,6 +29,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 $query = trim($_GET['q'] ?? $_POST['q'] ?? '');
 $format = strtolower(trim($_GET['format'] ?? $_POST['format'] ?? 'mp3'));
+$lang_code = trim($_GET['lang'] ?? $_POST['lang'] ?? '');
+
+// Log the language for debugging if provided
+if ($lang_code) {
+    error_log("API Search called with language: $lang_code");
+}
 
 if (empty($query)) {
     http_response_code(400);

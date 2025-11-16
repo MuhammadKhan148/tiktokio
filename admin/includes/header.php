@@ -28,9 +28,26 @@ $current_page = basename($_SERVER['PHP_SELF']);
         <a class="nav-link" href="../" target="_blank">
             <i class="fas fa-globe"></i> <span>Website</span>
         </a>
-        <a class="nav-link <?= ($current_page == 'language.php') ? 'active' : '' ?>" href="language.php">
-            <i class="fas fa-language"></i> <span>Language</span>
-        </a>
+        <div class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle <?= in_array($current_page, ['language.php', 'set_default_language.php', 'faqs.php', 'language_pages.php']) ? 'active' : '' ?>" 
+               href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-language"></i> <span>Languages</span>
+            </a>
+            <ul class="dropdown-menu" aria-labelledby="languageDropdown">
+                <li><a class="dropdown-item <?= ($current_page == 'set_default_language.php') ? 'active' : '' ?>" href="set_default_language.php">
+                    <i class="fas fa-star"></i> Set Default Language
+                </a></li>
+                <li><a class="dropdown-item <?= ($current_page == 'language.php') ? 'active' : '' ?>" href="language.php">
+                    <i class="fas fa-list"></i> Manage Languages
+                </a></li>
+                <li><a class="dropdown-item <?= ($current_page == 'faqs.php') ? 'active' : '' ?>" href="faqs.php">
+                    <i class="fas fa-question-circle"></i> FAQs
+                </a></li>
+                <li><a class="dropdown-item <?= ($current_page == 'language_pages.php') ? 'active' : '' ?>" href="language_pages.php">
+                    <i class="fas fa-file-alt"></i> Custom Pages
+                </a></li>
+            </ul>
+        </div>
 
         <div class="nav-item dropdown">
             <a class="nav-link dropdown-toggle <?= in_array($current_page, ['logo_and_favicon.php', 'global_header.php', 'global_footer.php', 'general.php', 'changepassword.php']) ? 'active' : '' ?>" 

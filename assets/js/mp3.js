@@ -40,6 +40,10 @@ document.addEventListener('DOMContentLoaded', function() {
         const formData = new FormData();
         formData.append('page', url);
         formData.append('ajax', '1');
+        // Include current language if available
+        if (window.__CURRENT_LANG_CODE__) {
+            formData.append('lang', window.__CURRENT_LANG_CODE__);
+        }
         fetch('', {
             method: 'POST',
             body: formData
@@ -95,16 +99,20 @@ document.querySelectorAll('#target .download-btn').forEach(btn => {
     this.disabled = true;
     this.innerHTML = '<div style="width: 16px; height: 16px; border: 2px solid #fff; border-top: 2px solid transparent; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto;"></div>';
 
-    // Request a fresh link for the selected type
-    const formData = new FormData();
-    formData.append('page', lastTikTokUrl);
-    formData.append('ajax', '1');
-    formData.append('type', label);
+        // Request a fresh link for the selected type
+        const formData = new FormData();
+        formData.append('page', lastTikTokUrl);
+        formData.append('ajax', '1');
+        formData.append('type', label);
+        // Include current language if available
+        if (window.__CURRENT_LANG_CODE__) {
+            formData.append('lang', window.__CURRENT_LANG_CODE__);
+        }
 
-    fetch('', {
-      method: 'POST',
-      body: formData
-    })
+        fetch('', {
+          method: 'POST',
+          body: formData
+        })
     .then(res => res.json())
     .then(data => {
       if (data.success && data.links && data.links[label]) {

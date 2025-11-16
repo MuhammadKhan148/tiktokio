@@ -67,10 +67,33 @@ if (substr($_SERVER['REQUEST_URI'], -1) === '/') {
         header('Content-Type: application/json');
 
         $tiktok_url = trim($_POST['page']);
+        $request_lang_code = trim($_POST['lang'] ?? '');
 
         require_once 'includes/config.php';
 
         require_once 'includes/download_logger.php';
+
+        // Handle language context for AJAX requests
+        $ajax_current_lang = null;
+        $ajax_lang_id = 0;
+
+        if ($request_lang_code) {
+            // Specific language requested via AJAX
+            $lang_res = $conn->query("SELECT * FROM languages WHERE code='" . $conn->real_escape_string($request_lang_code) . "' LIMIT 1");
+            if ($lang_res && $lang_res->num_rows > 0) {
+                $ajax_current_lang = $lang_res->fetch_assoc();
+                $ajax_lang_id = $ajax_current_lang['id'];
+            }
+        }
+
+        // Fallback to default language if no language found
+        if (!$ajax_current_lang) {
+            $default_res = $conn->query("SELECT * FROM languages WHERE is_default=1 LIMIT 1");
+            if ($default_res && $default_res->num_rows > 0) {
+                $ajax_current_lang = $default_res->fetch_assoc();
+                $ajax_lang_id = $ajax_current_lang['id'];
+            }
+        }
 
         
 
@@ -619,6 +642,9 @@ if (substr($_SERVER['REQUEST_URI'], -1) === '/') {
 <meta name="fastapi-base-url" content="<?php echo htmlspecialchars($fastapi_base_url); ?>" />
 <script>
     window.__FASTAPI_BASE_URL__ = <?php echo json_encode(rtrim($fastapi_base_url, '/'), JSON_UNESCAPED_SLASHES); ?>;
+    window.__CURRENT_LANG_CODE__ = <?php echo json_encode($current_lang_code, JSON_UNESCAPED_SLASHES); ?>;
+    window.__CURRENT_LANG_ID__ = <?php echo json_encode($current_lang_id, JSON_UNESCAPED_SLASHES); ?>;
+    window.__CURRENT_LANG_NAME__ = <?php echo json_encode($current_lang['name'] ?? 'English', JSON_UNESCAPED_SLASHES); ?>;
 </script>
 <?php
 $og_url = $site_url; // Initialize with base URL
@@ -712,6 +738,18 @@ if ($canonical_url && $language_count > 1): ?>
 
             $home = $res->fetch_assoc();
 
+        } else {
+            // Content missing for this language - auto-translate it
+            require_once 'includes/translator.php';
+            $translated = ensure_language_content($conn, $current_lang_id, $current_lang_code);
+            
+            if ($translated) {
+                // Fetch the newly translated content
+                $res = $conn->query("SELECT * FROM languages_home WHERE language_id=$current_lang_id LIMIT 1");
+                if ($res && $res->num_rows > 0) {
+                    $home = $res->fetch_assoc();
+                }
+            }
         }
 
     }

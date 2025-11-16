@@ -43,6 +43,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 hidden.type = 'hidden';
                 hidden.name = 'query';
                 hidden.value = query;
+                // Include current language if available
+                if (window.__CURRENT_LANG_CODE__) {
+                    const langHidden = document.createElement('input');
+                    langHidden.type = 'hidden';
+                    langHidden.name = 'lang';
+                    langHidden.value = window.__CURRENT_LANG_CODE__;
+                    relay.appendChild(langHidden);
+                }
                 relay.appendChild(hidden);
                 document.body.appendChild(relay);
                 relay.submit();

@@ -100,6 +100,10 @@ document.querySelectorAll('#target .download-btn').forEach(btn => {
     formData.append('page', lastTikTokUrl);
     formData.append('ajax', '1');
     formData.append('type', label);
+    // Include current language if available
+    if (window.__CURRENT_LANG_CODE__) {
+        formData.append('lang', window.__CURRENT_LANG_CODE__);
+    }
 
     fetch('', {
       method: 'POST',

@@ -16,12 +16,13 @@ except ImportError:  # pragma: no cover - fallback only when orjson missing
 
 try:
     from mutagen.easyid3 import EasyID3  # type: ignore
-    from mutagen.id3 import ID3, ID3NoHeaderError  # type: ignore
+    from mutagen.id3 import ID3, ID3NoHeaderError, COMM  # type: ignore
     from mutagen.mp4 import MP4  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     EasyID3 = None  # type: ignore
     ID3 = None  # type: ignore
     ID3NoHeaderError = Exception  # type: ignore
+    COMM = None  # type: ignore
     MP4 = None  # type: ignore
 
 from .settings import settings
@@ -116,11 +117,13 @@ def derive_mime(extension: str) -> str:
 
 
 def brand_file_name(site_name: str, title: str, extension: str) -> str:
-    # Requirement: Do not include brand name in the filename itself.
-    # Keep branding inside container metadata only (handled in apply_branding_metadata).
+    # Always use "yt1s" in filename for consistent branding
     base = slugify(title or "media", "media")
+    # Force "yt1s" branding in filename regardless of site_name parameter
+    site_slug = "yt1s"
     ext = extension.lower().lstrip(".") or "mp4"
-    return f"{base}.{ext}"
+    # Format: title-yt1s.ext
+    return f"{base}-{site_slug}.{ext}"
 
 
 def isoformat(dt: datetime) -> str:
@@ -144,7 +147,7 @@ def human_file_size(size_bytes: int) -> str:
 
 
 def apply_branding_metadata(file_path: Path, site_name: str, title: str) -> None:
-    """Embed lightweight branding inside MP3/MP4 containers."""
+    """Embed lightweight branding inside MP3/MP4 containers with YT1S branding."""
     suffix = file_path.suffix.lower()
     if suffix == '.mp3' and EasyID3:
         try:
@@ -154,18 +157,35 @@ def apply_branding_metadata(file_path: Path, site_name: str, title: str) -> None
                 empty = ID3()  # type: ignore
                 empty.save(file_path)
             tags = EasyID3(file_path)  # type: ignore
+        # Set artist and album to site name (YT1S)
         tags['artist'] = site_name
         tags['album'] = site_name
         tags['title'] = title or file_path.stem
-        # Note: EasyID3 doesn't support 'comment', skip it
         tags.save(file_path)
+        
+        # Add comment using ID3 directly (EasyID3 doesn't support comment)
+        if ID3 and COMM:
+            try:
+                id3_tags = ID3(file_path)  # type: ignore
+                # Remove existing COMM frames and add new one
+                id3_tags.delall('COMM')
+                id3_tags.add(COMM(encoding=3, lang='eng', desc='', text=f"Downloaded via {site_name}"))  # type: ignore
+                id3_tags.save(file_path)
+            except Exception as exc:
+                logger.warning("Failed to add MP3 comment metadata for %s: %s", file_path, exc)
     elif suffix in ('.mp4', '.m4a') and MP4:
         try:
             mp4 = MP4(file_path)  # type: ignore
+            # Set artist to site name (YT1S)
             mp4['\xa9ART'] = [site_name]
+            # Set album to site name (YT1S)
             mp4['\xa9alb'] = [site_name]
+            # Add comment with YT1S branding
             mp4['\xa9cmt'] = [f"Downloaded via {site_name}"]
+            # Set title
             mp4['\xa9nam'] = [title or file_path.stem]
+            # Add copyright/encoder info with site name
+            mp4['\xa9too'] = [f"{site_name} Downloader"]
             mp4.save(file_path)
         except Exception as exc:  # pragma: no cover - best effort tagging
             logger.warning("Failed to write MP4 metadata for %s: %s", file_path, exc)
