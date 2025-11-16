@@ -1,0 +1,145 @@
+<?php
+// Database configuration
+$host = 'localhost';
+$db   = 'tiktokio.mobi';
+$user = 'tiktokio.mobi';
+$pass = 'TfjfPrtjC4Z4wmBm';
+
+// Create connection
+$conn = new mysqli($host, $user, $pass, $db);
+
+// Check connection
+if ($conn->connect_error) {
+    die('Connection failed: ' . $conn->connect_error);
+}
+
+require_once __DIR__ . '/schema_bootstrap.php';
+
+// OpenAI ChatGPT API Configuration
+$openai_config = [
+    'api_key' => 'your-openai-api-key-here', // Replace with your actual OpenAI API key
+    'model' => 'gpt-3.5-turbo', // or 'gpt-4' for better quality
+    'max_tokens' => 1000,
+    'temperature' => 0.7,
+    'api_url' => 'https://api.openai.com/v1/chat/completions'
+];
+
+// Function to call ChatGPT API
+function chatGPT($prompt, $system_message = 'You are a helpful assistant.') {
+    global $openai_config;
+    
+    if (empty($openai_config['api_key']) || $openai_config['api_key'] === 'your-openai-api-key-here') {
+        return [
+            'success' => false,
+            'error' => 'OpenAI API key not configured'
+        ];
+    }
+    
+    $data = [
+        'model' => $openai_config['model'],
+        'messages' => [
+            [
+                'role' => 'system',
+                'content' => $system_message
+            ],
+            [
+                'role' => 'user',
+                'content' => $prompt
+            ]
+        ],
+        'max_tokens' => $openai_config['max_tokens'],
+        'temperature' => $openai_config['temperature']
+    ];
+    
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $openai_config['api_url'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_POSTFIELDS => json_encode($data),
+        CURLOPT_HTTPHEADER => [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . $openai_config['api_key']
+        ],
+        CURLOPT_TIMEOUT => 30,
+        CURLOPT_SSL_VERIFYPEER => true
+    ]);
+    
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curl_error = curl_error($ch);
+    curl_close($ch);
+    
+    if ($curl_error) {
+        return [
+            'success' => false,
+            'error' => 'cURL Error: ' . $curl_error
+        ];
+    }
+    
+    if ($http_code !== 200) {
+        return [
+            'success' => false,
+            'error' => 'HTTP Error: ' . $http_code,
+            'response' => $response
+        ];
+    }
+    
+    $result = json_decode($response, true);
+    
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        return [
+            'success' => false,
+            'error' => 'JSON Error: ' . json_last_error_msg()
+        ];
+    }
+    
+    if (isset($result['choices'][0]['message']['content'])) {
+        return [
+            'success' => true,
+            'response' => $result['choices'][0]['message']['content'],
+            'usage' => $result['usage'] ?? null
+        ];
+    }
+    
+    return [
+        'success' => false,
+        'error' => 'Invalid response format',
+        'response' => $result
+    ];
+}
+
+// Function to translate text using ChatGPT
+function translateText($text, $target_language, $source_language = 'English') {
+    // Check if text contains HTML
+    $has_html = strip_tags($text) != $text;
+    
+    if ($has_html) {
+        // For HTML content, preserve formatting
+        $prompt = "Translate the following HTML content from {$source_language} to {$target_language}. IMPORTANT: Preserve all HTML tags, attributes, and formatting EXACTLY as they are. Only translate the text content inside the tags. Return ONLY the translated HTML without any explanations:\n\n{$text}";
+        $system_message = "You are a professional translator. Translate HTML content while preserving all tags, structure, and formatting. Only translate text between tags, never translate tag names, attributes, or CSS classes.";
+    } else {
+        // For plain text
+        $prompt = "Translate the following text from {$source_language} to {$target_language}. Only provide the translation, no explanations:\n\n{$text}";
+        $system_message = "You are a professional translator. Provide accurate translations without any explanations or additional text.";
+    }
+    
+    return chatGPT($prompt, $system_message);
+}
+
+// Function to generate content using ChatGPT
+function generateContent($topic, $type = 'article', $words = 200) {
+    $prompt = "Write a {$type} about '{$topic}' in approximately {$words} words. Make it informative and engaging.";
+    $system_message = "You are a professional content writer. Create high-quality, original content.";
+    
+    return chatGPT($prompt, $system_message);
+}
+
+// Function to improve/rewrite text using ChatGPT
+function improveText($text, $instruction = 'improve and make it more engaging') {
+    $prompt = "Please {$instruction} the following text:\n\n{$text}";
+    $system_message = "You are a professional editor and writer.";
+    
+    return chatGPT($prompt, $system_message);
+} 
+
