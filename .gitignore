@@ -29,7 +29,6 @@ desktop.ini
 # Temporary files
 *.tmp
 *.temp
-php_router.php
 
 # Node modules (if any)
 node_modules/
