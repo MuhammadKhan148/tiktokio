@@ -116,6 +116,12 @@ if (!function_exists('media_api_call')) {
         $settings = get_site_settings_cached($conn);
         $baseUrl = rtrim($settings['fastapi_base_url'] ?? 'http://127.0.0.1:8000', '/');
         $authKey = $settings['fastapi_auth_key'] ?? '';
+        
+        // Get JWT token as fallback if auth key is not set or empty
+        $jwtToken = '';
+        if (empty($authKey) || $authKey === 'change-me') {
+            $jwtToken = get_api_token($conn);
+        }
 
         $url = $baseUrl . $endpoint;
         $ch = curl_init($url);
@@ -123,17 +129,25 @@ if (!function_exists('media_api_call')) {
         // Longer timeout for download endpoint
         $timeout = ($endpoint === '/download') ? 180 : 120;
         
+        // Build headers - prefer X-Internal-Key, fallback to JWT token
+        $headers = [
+            'Content-Type: application/json',
+            'User-Agent: TikTokIO-MediaBridge/1.0',
+        ];
+        
+        if (!empty($authKey) && $authKey !== 'change-me') {
+            $headers[] = 'X-Internal-Key: ' . $authKey;
+        } elseif (!empty($jwtToken)) {
+            $headers[] = 'Authorization: Bearer ' . $jwtToken;
+        }
+        
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT => $timeout,
             CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
-            CURLOPT_HTTPHEADER => [
-                'Content-Type: application/json',
-                'X-Internal-Key: ' . $authKey,
-                'User-Agent: TikTokIO-MediaBridge/1.0',
-            ],
+            CURLOPT_HTTPHEADER => $headers,
         ]);
 
         $response = curl_exec($ch);
@@ -156,6 +170,41 @@ if (!function_exists('media_api_call')) {
                 'body' => substr($response, 0, 200),
                 'status' => $statusCode
             ];
+        }
+
+        // If we got 401 and were using X-Internal-Key, try with JWT token
+        if ($statusCode === 401 && !empty($authKey) && $authKey !== 'change-me' && empty($jwtToken)) {
+            // Retry with JWT token
+            $jwtToken = get_api_token($conn);
+            if (!empty($jwtToken)) {
+                $ch = curl_init($url);
+                $headers = [
+                    'Content-Type: application/json',
+                    'User-Agent: TikTokIO-MediaBridge/1.0',
+                    'Authorization: Bearer ' . $jwtToken,
+                ];
+                curl_setopt_array($ch, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_TIMEOUT => $timeout,
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_POST => true,
+                    CURLOPT_POSTFIELDS => json_encode($payload),
+                    CURLOPT_HTTPHEADER => $headers,
+                ]);
+                $response = curl_exec($ch);
+                $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                curl_close($ch);
+                
+                $decoded = json_decode($response, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    return [
+                        'success' => false,
+                        'error' => 'Invalid JSON response from backend',
+                        'body' => substr($response, 0, 200),
+                        'status' => $statusCode
+                    ];
+                }
+            }
         }
 
         if ($statusCode < 200 || $statusCode >= 300) {
@@ -202,5 +251,79 @@ if (!function_exists('media_api_download')) {
             'site_name' => $siteName,
         ];
         return media_api_call($conn, '/download', $payload);
+    }
+}
+
+if (!function_exists('get_api_token')) {
+    /**
+     * Get or generate a JWT token for frontend API access.
+     * Tokens are stored in session and automatically refreshed when expired.
+     * 
+     * @param mysqli $conn Database connection
+     * @return string JWT token
+     */
+    function get_api_token($conn) {
+        // Start session if not already started
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        // Check if we have a valid token in session
+        if (isset($_SESSION['api_token']) && isset($_SESSION['api_token_expires'])) {
+            // Token is still valid (with 1 hour buffer)
+            if ($_SESSION['api_token_expires'] > (time() + 3600)) {
+                return $_SESSION['api_token'];
+            }
+        }
+        
+        // Fetch new token from FastAPI
+        $settings = get_site_settings_cached($conn);
+        $baseUrl = rtrim($settings['fastapi_base_url'] ?? 'http://127.0.0.1:8000', '/');
+        $url = $baseUrl . '/token';
+        
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_TIMEOUT => 10,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/json',
+                'User-Agent: TikTokIO-MediaBridge/1.0',
+            ],
+        ]);
+        
+        $response = curl_exec($ch);
+        $statusCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+        
+        if ($curlError) {
+            error_log("Failed to fetch JWT token: " . $curlError);
+            return '';
+        }
+        
+        if ($statusCode === 200) {
+            $data = json_decode($response, true);
+            if (isset($data['token'])) {
+                // Start session if not already started (needed for storing token)
+                if (session_status() === PHP_SESSION_NONE) {
+                    session_start();
+                }
+                $_SESSION['api_token'] = $data['token'];
+                // Store expiration time (24 hours from now, or use expires_at if provided)
+                if (isset($data['expires_at'])) {
+                    $_SESSION['api_token_expires'] = strtotime($data['expires_at']);
+                } else {
+                    $_SESSION['api_token_expires'] = time() + ($data['expires_in'] ?? 86400);
+                }
+                return $data['token'];
+            }
+        } else {
+            error_log("Failed to get JWT token. Status: $statusCode, Response: " . substr($response, 0, 200));
+        }
+        
+        // Fallback: return empty string if token generation fails
+        // The API will still work with X-Internal-Key for backend calls
+        return '';
     }
 }

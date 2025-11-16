@@ -328,6 +328,7 @@ if ($current_slug && $lang_id) {
             <?php endif; ?>
     </div>
 </footer>
+<script src="/assets/js/api-token.js" defer></script>
 <script src="/assets/js/yCLRZN5bZzQA.js" defer></script>
 <script src="/assets/js/index.js" defer></script>
 <script src="/assets/js/navigation.js" defer></script>
@@ -343,6 +344,22 @@ if ($res && $res->num_rows > 0) {
 }
 ?>
 <?php if (!empty($global_footer_content)) echo $global_footer_content; ?>
+<?php
+// Display slug redirects information
+require_once __DIR__ . '/slug_helper.php';
+$current_slug_for_display = isset($current_slug) ? $current_slug : '';
+if (empty($current_slug_for_display) && isset($lang_id)) {
+    // Get home slug
+    $res_slug = $conn->query("SELECT slug FROM languages_home WHERE language_id=$lang_id LIMIT 1");
+    if ($res_slug && $res_slug->num_rows > 0) {
+        $row_slug = $res_slug->fetch_assoc();
+        $current_slug_for_display = $row_slug['slug'];
+    }
+}
+if (isset($lang_id)) {
+    display_slug_redirects($conn, $current_slug_for_display, $lang_id);
+}
+?>
  <?php
     // Fetch site email and phone for JSON-LD schema
     $site_email = 'support@tiktokio.mobi'; // Default fallback

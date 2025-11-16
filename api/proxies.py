@@ -55,17 +55,18 @@ class ProxyRotator:
                 logger.debug(f"Selected proxy ID {row_data['id']} for provider {self.provider_key}")
 
         return format_proxy(row_data)
-    
+
     def get_proxy_count(self) -> int:
         """Get the count of active proxies for this provider."""
         with db_connection() as conn:
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT COUNT(*) as count FROM api_proxies WHERE provider_key=%s AND is_active=1",
+                    "SELECT COUNT(*) AS count FROM api_proxies WHERE provider_key=%s AND is_active=1",
                     (self.provider_key,),
                 )
                 result = cursor.fetchone()
-                return result["count"] if result else 0
+                conn.commit()  # Commit read operation
+                return int(result["count"]) if result else 0
 
 
 def format_proxy(row) -> str:

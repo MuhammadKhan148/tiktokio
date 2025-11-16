@@ -19,7 +19,7 @@ def db_connection() -> Generator[pymysql.connections.Connection, None, None]:
         user=settings.db_user,
         password=settings.db_password,
         database=settings.db_name,
-        autocommit=True,
+        autocommit=False,  # Disable autocommit to support transactions with FOR UPDATE
         cursorclass=DictCursor,
     )
     try:
@@ -33,6 +33,7 @@ def fetch_one(query: str, params: Optional[tuple[Any, ...]] = None) -> Optional[
         with conn.cursor() as cursor:
             cursor.execute(query, params or ())
             row = cursor.fetchone()
+            conn.commit()  # Commit read operations
             return row
 
 
@@ -40,6 +41,7 @@ def execute(query: str, params: Optional[tuple[Any, ...]] = None) -> None:
     with db_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, params or ())
+            conn.commit()  # Commit write operations
 
 
 _SITE_CACHE: Dict[str, Any] = {"value": None, "expires": 0}

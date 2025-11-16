@@ -98,7 +98,7 @@ class YTDLPProvider(ProviderBase):
             except Exception as exc:
                 shutil.rmtree(work_dir, ignore_errors=True)
                 error_msg = str(exc)
-                logger.error(f"Unexpected error during download: {error_msg}")
+                logger.error("Unexpected error during download for %s: %s", payload.url, error_msg, exc_info=True)
                 raise HTTPException(
                     status.HTTP_500_INTERNAL_SERVER_ERROR,
                     f"Download failed: {error_msg}"
@@ -135,6 +135,8 @@ class YTDLPProvider(ProviderBase):
             "uploader": info.get('uploader'),
             "provider": self.key,
         }
+
+        logger.info("Download finished successfully for %s (%s)", payload.url, final_name)
 
         return DownloadResult(
             file_path=final_path,

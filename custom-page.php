@@ -931,6 +931,14 @@ if ($res && $res->num_rows > 0) {
 ?>
 
 <?php if (!empty($global_footer_content)) echo $global_footer_content; ?>
+<?php
+// Display slug redirects information
+require_once 'includes/slug_helper.php';
+$current_slug_for_display = isset($current_slug) ? $current_slug : '';
+if (isset($lang_id)) {
+    display_slug_redirects($conn, $current_slug_for_display, $lang_id);
+}
+?>
  <?php
     // Fetch site email and phone for JSON-LD schema
     $site_email = 'support@tiktokio.mobi'; // Default fallback

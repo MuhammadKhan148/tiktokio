@@ -122,6 +122,44 @@ async def healthcheck():
     }
 
 
+@app.get("/token")
+async def get_token():
+    """
+    Generate a JWT token for anonymous users.
+    This allows frontend clients to authenticate with the API automatically.
+    Tokens are valid for 24 hours by default.
+    """
+    import jwt
+    from datetime import datetime, timedelta, timezone
+    
+    profile = get_site_profile()
+    jwt_secret = profile.get('jwt_secret', 'change-me')
+    
+    # Generate a unique user ID for this session
+    user_id = f"anon_{uuid.uuid4().hex[:16]}"
+    
+    # Token expires in 24 hours
+    now = datetime.now(timezone.utc)
+    exp = now + timedelta(hours=24)
+    
+    payload = {
+        'user_id': user_id,
+        'type': 'api_access',
+        'iat': int(now.timestamp()),
+        'exp': int(exp.timestamp()),
+    }
+    
+    token = jwt.encode(payload, jwt_secret, algorithm='HS256')
+    
+    logger.debug(f"Generated JWT token for anonymous user: {user_id}")
+    
+    return {
+        "token": token,
+        "expires_at": exp.isoformat(),
+        "expires_in": 86400,  # 24 hours in seconds
+    }
+
+
 @app.post("/search", response_model=SearchResponse)
 async def search_media(payload: SearchRequest, _: None = Depends(require_internal_key)):
     site_profile = get_site_profile()

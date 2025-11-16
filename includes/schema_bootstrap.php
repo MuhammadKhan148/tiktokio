@@ -195,6 +195,12 @@ if (!function_exists('bootstrap_core_schema')) {
                 INDEX `idx_provider_key` (`provider_key`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci"
         );
+        ensure_column(
+            $conn,
+            'api_proxies',
+            'notes',
+            " `notes` TEXT DEFAULT NULL AFTER `last_used_at` "
+        );
 
         ensure_table(
             $conn,
