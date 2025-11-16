@@ -27,6 +27,13 @@ class YTDLPProvider(ProviderBase):
         super().__init__(context)
         self.rotator = ProxyRotator(self.key)
         self.ffmpeg_location = self._resolve_ffmpeg_location()
+        
+        # Log proxy availability on initialization
+        proxy_count = self.rotator.get_proxy_count()
+        if proxy_count > 0:
+            logger.info(f"YTDLP Provider initialized with {proxy_count} active proxies")
+        else:
+            logger.warning("YTDLP Provider initialized with NO proxies - requests may fail or be rate-limited")
 
     async def search(self, payload: SearchRequest) -> Dict[str, Any]:
         return await asyncio.to_thread(self._search_sync, payload)
@@ -63,6 +70,11 @@ class YTDLPProvider(ProviderBase):
         work_dir.mkdir(parents=True, exist_ok=True)
         outtmpl = str(work_dir / '%(id)s.%(ext)s')
         ydl_opts = self._base_opts(skip_download=False)
+        
+        # Log which proxy is being used (if any)
+        proxy_used = ydl_opts.get('proxy', 'No proxy')
+        logger.info(f"Starting download for {payload.url} using proxy: {proxy_used}")
+        
         ydl_opts.update({
             'outtmpl': outtmpl,
             'writethumbnail': False,
@@ -132,7 +144,13 @@ class YTDLPProvider(ProviderBase):
         )
 
     def _base_opts(self, skip_download: bool) -> Dict[str, Any]:
+        """
+        Build base yt-dlp options with rotating proxy support.
+        Proxies are only used for YTDLP provider.
+        """
+        # Get next proxy from rotation pool
         proxy = self.rotator.next_proxy()
+        
         opts = {
             'quiet': True,
             'no_warnings': True,
@@ -144,6 +162,8 @@ class YTDLPProvider(ProviderBase):
         }
         if self.ffmpeg_location:
             opts['ffmpeg_location'] = self.ffmpeg_location
+            logger.debug(f"Using FFmpeg from: {self.ffmpeg_location}")
+        
         # Add YouTube API key if available
         youtube_api_key = os.getenv('YOUTUBE_API_KEY', 'AIzaSyBngprvHkjzJpiNHy5jdHIcpQ-bWDETxJE')
         if youtube_api_key and youtube_api_key != 'change-me':
@@ -152,10 +172,17 @@ class YTDLPProvider(ProviderBase):
                     'api_key': youtube_api_key,
                 }
             }
+        
+        # Add proxy to options (only for YTDLP)
         if proxy:
             opts['proxy'] = proxy
+            logger.debug(f"Using proxy for YTDLP: {proxy.split('@')[-1] if '@' in proxy else proxy}")
+        else:
+            logger.debug("No proxy available for YTDLP request")
+        
         if skip_download:
             opts['skip_download'] = True
+            
         return opts
 
     def _format_for(self, target_format: str, quality: str | None) -> str:

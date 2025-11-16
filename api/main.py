@@ -50,16 +50,50 @@ async def require_internal_key(
     authorization: Optional[str] = Header(default=None),
 ):
     """
-    Lightweight auth guard for internal PHP -> FastAPI calls.
-
-    For local development we disable strict key checking to avoid
-    configuration mismatches between the .env file and the database.
-
-    If you want to re‑enable protection in production, set a non‑default
-    FASTAPI_AUTH_KEY and restore the comparison logic.
+    JWT-based authentication guard for /search and /download endpoints.
+    
+    Requirements:
+    - Must provide valid JWT token in Authorization header (Bearer token)
+    - OR provide valid X-Internal-Key header
+    
+    This prevents direct access to /search and /download by unauthorized users.
     """
-    # DEVELOPMENT MODE: skip auth entirely
-    return
+    # Check X-Internal-Key first (for PHP backend calls)
+    if x_internal_key:
+        profile = get_site_profile()
+        expected_key = profile.get('fastapi_auth_key') or settings.fastapi_auth_key
+        if x_internal_key == expected_key:
+            logger.debug("Request authenticated via X-Internal-Key")
+            return
+    
+    # Check JWT token (Bearer token)
+    if authorization and authorization.startswith('Bearer '):
+        token = authorization[7:]  # Remove "Bearer " prefix
+        try:
+            import jwt
+            profile = get_site_profile()
+            jwt_secret = profile.get('jwt_secret', 'change-me')
+            
+            # Decode and verify JWT
+            payload = jwt.decode(token, jwt_secret, algorithms=['HS256'])
+            logger.debug(f"Request authenticated via JWT for user: {payload.get('user_id', 'unknown')}")
+            return
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail="JWT token has expired"
+            )
+        except jwt.InvalidTokenError as e:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail=f"Invalid JWT token: {str(e)}"
+            )
+    
+    # No valid authentication provided
+    raise HTTPException(
+        status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required. Provide valid JWT token in Authorization header or X-Internal-Key"
+    )
 
 
 @app.on_event("startup")
